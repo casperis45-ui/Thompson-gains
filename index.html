@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Thompson Gains Tracker</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0a0a0a; color: #f0f0f0; font-family: 'DM Sans', system-ui, sans-serif; }
+  input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: #111; }
+  ::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+  @keyframes pop { 0%,100% { transform:scale(1); } 50% { transform:scale(1.05); } }
+  @keyframes timerPulse { 0%,100% { opacity:1; } 50% { opacity:0.6; } }
+  @keyframes ring { 0% { transform:scale(1); } 25% { transform:scale(1.15); } 50% { transform:scale(1); } 75% { transform:scale(1.1); } 100% { transform:scale(1); } }
+  .day-tab:hover { opacity: 0.85; }
+  .ex-row:hover { background: rgba(255,255,255,0.02) !important; }
+  .timer-ring { animation: ring 0.5s ease; }
+  select { appearance: none; -webkit-appearance: none; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+const WEEKDAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+
+const WORKOUTS = [
+  {
+    id: "push", label: "Upper — Push", subtitle: "Chest, Shoulders, Tris",
+    color: "#ff6b35", equipment: "🏋️ Barbell on Rack", equipColor: "#ff6b35",
+    sections: [
+      { title: "Superset 1 — Chest Power", exercises: [
+        { id: "bench", name: "Barbell Bench Press", sets: 4, reps: "8–10" },
+        { id: "incline", name: "Dumbbell Incline Press", sets: 4, reps: "10–12" },
+      ]},
+      { title: "Superset 2 — Shoulders", exercises: [
+        { id: "ohpress", name: "Dumbbell Shoulder Press", sets: 3, reps: "10–12" },
+        { id: "lateral", name: "Dumbbell Lateral Raise", sets: 3, reps: "15" },
+      ]},
+      { title: "Superset 3 — Triceps", exercises: [
+        { id: "skull", name: "Skull Crushers (Barbell)", sets: 3, reps: "12" },
+        { id: "triext", name: "Tricep OH Extension (DB)", sets: 3, reps: "12" },
+      ]},
+      { title: "⚡ Ab Finisher", isFinisher: true, exercises: [
+        { id: "plank_p", name: "Plank", sets: 3, reps: "40s" },
+        { id: "kbtwist_p", name: "KB Russian Twist", sets: 3, reps: "20" },
+      ]},
+    ],
+  },
+  {
+    id: "quad", label: "Lower — Quad & Knee", subtitle: "Knee Rebuild Day",
+    color: "#47ffb0", equipment: "⚙️ Plates on Cable", equipColor: "#47b8ff",
+    sections: [
+      { title: "Superset 1 — Quad + Knee Stability", exercises: [
+        { id: "legext", name: "Short Arc Leg Extension", sets: 4, reps: "15", kneeSafe: true },
+        { id: "tke", name: "Terminal Knee Extension (Cable)", sets: 4, reps: "15 ea.", kneeSafe: true },
+      ]},
+      { title: "Superset 2 — Hamstrings", exercises: [
+        { id: "legcurl_q", name: "Leg Curl (FEIERDUN)", sets: 4, reps: "12–15" },
+        { id: "rdl_q", name: "Romanian Deadlift (DB)", sets: 4, reps: "10–12" },
+      ]},
+      { title: "Superset 3 — Glutes + Hips", exercises: [
+        { id: "pullthrough", name: "Cable Pull-Through", sets: 3, reps: "12", kneeSafe: true },
+        { id: "clam", name: "Clamshells (BW)", sets: 3, reps: "20 ea.", kneeSafe: true },
+      ]},
+      { title: "⚡ Ab Finisher", isFinisher: true, exercises: [
+        { id: "deadbug_q", name: "Dead Bug", sets: 3, reps: "10 ea." },
+        { id: "kbtwist_q", name: "KB Russian Twist", sets: 3, reps: "20" },
+      ]},
+    ],
+  },
+  {
+    id: "pull", label: "Upper — Pull", subtitle: "Back & Biceps",
+    color: "#47b8ff", equipment: "⚙️ Plates on Cable", equipColor: "#47b8ff",
+    sections: [
+      { title: "Superset 1 — Back Width", exercises: [
+        { id: "pulldown", name: "Cable Lat Pulldown", sets: 4, reps: "10–12" },
+        { id: "sarow", name: "Single Arm DB Row", sets: 4, reps: "10–12 ea." },
+      ]},
+      { title: "Superset 2 — Back Thickness", exercises: [
+        { id: "cablerow", name: "Cable Seated Row", sets: 4, reps: "10–12" },
+        { id: "reardelt", name: "Dumbbell Rear Delt Fly", sets: 3, reps: "15" },
+      ]},
+      { title: "Superset 3 — Bicep Size", exercises: [
+        { id: "dbcurl", name: "Dumbbell Curl", sets: 3, reps: "12" },
+        { id: "hammercurl", name: "Cable Hammer Curl", sets: 3, reps: "12" },
+      ]},
+      { title: "⚡ Ab Finisher", isFinisher: true, exercises: [
+        { id: "plank_pl", name: "Plank", sets: 3, reps: "40s" },
+        { id: "deadbug_pl", name: "Dead Bug", sets: 3, reps: "10 ea." },
+      ]},
+    ],
+  },
+  {
+    id: "glutes", label: "Lower — Glutes & Hams", subtitle: "Legs in Shorts Day",
+    color: "#c47aff", equipment: "💪 Dumbbells + FEIERDUN", equipColor: "#c47aff",
+    sections: [
+      { title: "Superset 1 — Glute Mass", exercises: [
+        { id: "hipthrust", name: "Dumbbell Hip Thrust", sets: 4, reps: "12" },
+        { id: "sumo", name: "Sumo Squat (DB, shallow)", sets: 4, reps: "12", kneeSafe: true },
+      ]},
+      { title: "Superset 2 — Hamstring Strength", exercises: [
+        { id: "legcurl_g", name: "Leg Curl (FEIERDUN)", sets: 4, reps: "12–15" },
+        { id: "kbswing_g", name: "KB Swing", sets: 4, reps: "15" },
+      ]},
+      { title: "Superset 3 — Calf Aesthetics", exercises: [
+        { id: "calfraise", name: "Standing Calf Raise (DB)", sets: 4, reps: "20" },
+        { id: "slcalf", name: "Single Leg Calf Raise (BW)", sets: 4, reps: "15 ea." },
+      ]},
+      { title: "⚡ Ab Finisher", isFinisher: true, exercises: [
+        { id: "kbtwist_g", name: "KB Russian Twist", sets: 3, reps: "20" },
+        { id: "plank_g", name: "Plank", sets: 3, reps: "40s" },
+      ]},
+    ],
+  },
+  {
+    id: "kb", label: "Full Body — KB Sweat", subtitle: "Conditioning + Strength",
+    color: "#ff47a8", equipment: "🔔 Kettlebell Only", equipColor: "#ff47a8",
+    sections: [
+      { title: "Circuit 1 — Full Body Primer (2 Rounds)", exercises: [
+        { id: "kbdl", name: "KB Deadlift", sets: 2, reps: "15" },
+        { id: "kbgoblet", name: "KB Goblet Squat (shallow)", sets: 2, reps: "12", kneeSafe: true },
+        { id: "kbhalo", name: "KB Halo", sets: 2, reps: "10 each way" },
+      ]},
+      { title: "Circuit 2 — Conditioning Burner (3 Rounds)", exercises: [
+        { id: "kbswing_k", name: "KB Swing", sets: 3, reps: "20" },
+        { id: "kbclean", name: "KB Clean & Press", sets: 3, reps: "8 ea." },
+        { id: "kbrow", name: "KB Bent Over Row", sets: 3, reps: "10 ea." },
+      ]},
+      { title: "Circuit 3 — Strength Finisher (3 Rounds)", exercises: [
+        { id: "kbslrdl", name: "KB Single Leg RDL", sets: 3, reps: "10 ea.", kneeSafe: true },
+        { id: "kbfloor", name: "KB Floor Press", sets: 3, reps: "12" },
+        { id: "kbcarry", name: "KB Suitcase Carry", sets: 3, reps: "20 steps ea." },
+      ]},
+      { title: "⚡ Ab Finisher", isFinisher: true, exercises: [
+        { id: "kbtwist_k", name: "KB Russian Twist", sets: 3, reps: "20" },
+        { id: "kbwindmill", name: "KB Windmill", sets: 3, reps: "8 ea." },
+      ]},
+    ],
+  },
+  { id: "rest", label: "Rest Day", subtitle: "Recovery", color: "#444", equipment: "😴 Rest", equipColor: "#444", sections: [] },
+];
+
+const DEFAULT_SCHEDULE = { Monday:"push", Tuesday:"quad", Wednesday:"pull", Thursday:"glutes", Friday:"rest", Saturday:"kb", Sunday:"rest" };
+const STORAGE_KEY = "thompson-gains-v3";
+
+function loadData() {
+  try { const r = localStorage.getItem(STORAGE_KEY); return r ? JSON.parse(r) : {}; } catch(e) { return {}; }
+}
+function saveData(d) { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(d)); } catch(e) {} }
+
+// ---- REST TIMER ----
+function RestTimer({ color }) {
+  const [seconds, setSeconds] = useState(60);
+  const [timeLeft, setTimeLeft] = useState(null);
+  const [running, setRunning] = useState(false);
+  const [done, setDone] = useState(false);
+  const intervalRef = useRef(null);
+
+  useEffect(() => {
+    if (running && timeLeft > 0) {
+      intervalRef.current = setInterval(() => setTimeLeft(t => t - 1), 1000);
+    } else if (running && timeLeft === 0) {
+      setRunning(false);
+      setDone(true);
+    }
+    return () => clearInterval(intervalRef.current);
+  }, [running, timeLeft]);
+
+  const start = () => { setTimeLeft(seconds); setRunning(true); setDone(false); };
+  const stop = () => { setRunning(false); clearInterval(intervalRef.current); };
+  const reset = () => { stop(); setTimeLeft(null); setDone(false); };
+
+  const pct = timeLeft !== null ? (timeLeft / seconds) * 100 : 100;
+  const radius = 28; const circ = 2 * Math.PI * radius;
+
+  return (
+    <div style={{ background: "#111", border: `1px solid ${running ? color : "#222"}`, borderRadius: 12, padding: "14px 16px", marginBottom: 12, transition: "border-color 0.3s" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+        <div style={{ position: "relative", width: 70, height: 70, flexShrink: 0 }}>
+          <svg width="70" height="70" style={{ transform: "rotate(-90deg)" }}>
+            <circle cx="35" cy="35" r={radius} fill="none" stroke="#222" strokeWidth="5"/>
+            <circle cx="35" cy="35" r={radius} fill="none" stroke={done ? "#47ffb0" : color}
+              strokeWidth="5" strokeDasharray={circ}
+              strokeDashoffset={circ * (1 - pct/100)}
+              style={{ transition: "stroke-dashoffset 0.9s linear", strokeLinecap: "round" }}
+            />
+          </svg>
+          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center",
+            fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: done ? "#47ffb0" : timeLeft !== null ? color : "#666",
+            animation: done ? "ring 0.5s ease" : "none"
+          }}>
+            {done ? "GO!" : timeLeft !== null ? timeLeft : "REST"}
+          </div>
+        </div>
+
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 11, color: "#555", textTransform: "uppercase", letterSpacing: 2, marginBottom: 8 }}>REST TIMER</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+            {[30,45,60,90,120].map(s => (
+              <button key={s} onClick={() => { setSeconds(s); setTimeLeft(null); setRunning(false); setDone(false); }} style={{
+                padding: "4px 10px", borderRadius: 5, border: `1px solid ${seconds === s && !running ? color : "#2a2a2a"}`,
+                background: seconds === s && !running ? `${color}22` : "transparent",
+                color: seconds === s && !running ? color : "#666", fontSize: 12, cursor: "pointer", fontFamily: "inherit",
+              }}>{s}s</button>
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            {!running && timeLeft === null && (
+              <button onClick={start} style={{ padding: "7px 18px", borderRadius: 6, background: color, border: "none", color: "#000", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit", letterSpacing: 1 }}>START</button>
+            )}
+            {running && (
+              <button onClick={stop} style={{ padding: "7px 18px", borderRadius: 6, background: "#222", border: `1px solid #444`, color: "#aaa", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>PAUSE</button>
+            )}
+            {!running && timeLeft !== null && timeLeft > 0 && (
+              <button onClick={start} style={{ padding: "7px 18px", borderRadius: 6, background: color, border: "none", color: "#000", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>RESUME</button>
+            )}
+            {timeLeft !== null && (
+              <button onClick={reset} style={{ padding: "7px 14px", borderRadius: 6, background: "transparent", border: "1px solid #2a2a2a", color: "#555", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>RESET</button>
+            )}
+            {done && (
+              <button onClick={() => { start(); }} style={{ padding: "7px 18px", borderRadius: 6, background: "#47ffb0", border: "none", color: "#000", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>AGAIN</button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---- WORKOUT TIMER ----
+function WorkoutTimer({ color, isRunning, onToggle, onReset }) {
+  const [elapsed, setElapsed] = useState(0);
+  const intervalRef = useRef(null);
+  const startRef = useRef(null);
+
+  useEffect(() => {
+    if (isRunning) {
+      startRef.current = Date.now() - elapsed * 1000;
+      intervalRef.current = setInterval(() => {
+        setElapsed(Math.floor((Date.now() - startRef.current) / 1000));
+      }, 500);
+    } else {
+      clearInterval(intervalRef.current);
+    }
+    return () => clearInterval(intervalRef.current);
+  }, [isRunning]);
+
+  const handleReset = () => { setElapsed(0); onReset(); };
+  const mins = String(Math.floor(elapsed / 60)).padStart(2, "0");
+  const secs = String(elapsed % 60).padStart(2, "0");
+  const overTime = elapsed > 1800;
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <div style={{
+        fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, letterSpacing: 2,
+        color: overTime ? "#ff4444" : isRunning ? color : "#555",
+        animation: isRunning ? "timerPulse 2s ease infinite" : "none",
+        minWidth: 90, textAlign: "center",
+      }}>
+        {mins}:{secs}
+      </div>
+      <button onClick={onToggle} style={{
+        padding: "6px 14px", borderRadius: 6, border: `1px solid ${isRunning ? "#444" : color}`,
+        background: isRunning ? "#1a1a1a" : `${color}22`, color: isRunning ? "#888" : color,
+        fontFamily: "inherit", fontWeight: 600, fontSize: 11, cursor: "pointer", letterSpacing: 1,
+      }}>
+        {isRunning ? "⏸ PAUSE" : "▶ START"}
+      </button>
+      <button onClick={handleReset} style={{
+        padding: "6px 10px", borderRadius: 6, border: "1px solid #2a2a2a",
+        background: "transparent", color: "#555", fontFamily: "inherit", fontSize: 11, cursor: "pointer",
+      }}>↺</button>
+      {overTime && <span style={{ fontSize: 10, color: "#ff4444", letterSpacing: 1 }}>OVER 30 MIN</span>}
+    </div>
+  );
+}
+
+// ---- SCHEDULE EDITOR ----
+function ScheduleEditor({ schedule, onSave, onClose }) {
+  const [draft, setDraft] = useState({ ...schedule });
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div style={{ background: "#141414", border: "1px solid #2a2a2a", borderRadius: 14, padding: 24, width: "100%", maxWidth: 420, animation: "fadeIn 0.2s ease" }}>
+        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 26, color: "#e8ff47", letterSpacing: 2, marginBottom: 4 }}>EDIT SCHEDULE</div>
+        <div style={{ fontSize: 12, color: "#555", marginBottom: 20 }}>Assign a workout to each day of the week</div>
+
+        {WEEKDAYS.map(day => {
+          const wo = WORKOUTS.find(w => w.id === draft[day]) || WORKOUTS[5];
+          return (
+            <div key={day} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, gap: 10 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "#aaa", width: 90, flexShrink: 0 }}>{day}</div>
+              <div style={{ flex: 1, position: "relative" }}>
+                <select value={draft[day] || "rest"} onChange={e => setDraft({ ...draft, [day]: e.target.value })} style={{
+                  width: "100%", padding: "8px 12px", background: "#1a1a1a",
+                  border: `1px solid ${wo.color}44`, borderRadius: 7,
+                  color: wo.color, fontSize: 13, fontFamily: "inherit", cursor: "pointer", outline: "none",
+                }}>
+                  {WORKOUTS.map(w => <option key={w.id} value={w.id}>{w.label}</option>)}
+                </select>
+              </div>
+            </div>
+          );
+        })}
+
+        <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
+          <button onClick={() => onSave(draft)} style={{
+            flex: 1, padding: "11px 0", borderRadius: 8, background: "#e8ff47", border: "none",
+            color: "#000", fontFamily: "inherit", fontWeight: 700, fontSize: 13, cursor: "pointer", letterSpacing: 1,
+          }}>SAVE SCHEDULE</button>
+          <button onClick={onClose} style={{
+            padding: "11px 16px", borderRadius: 8, background: "transparent",
+            border: "1px solid #2a2a2a", color: "#555", fontFamily: "inherit", fontSize: 12, cursor: "pointer",
+          }}>CANCEL</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---- SET BUTTON ----
+function SetButton({ checked, onClick, color }) {
+  return (
+    <button onClick={onClick} style={{
+      width: 34, height: 34, borderRadius: 6,
+      border: checked ? `2px solid ${color}` : "2px solid #333",
+      background: checked ? color : "transparent",
+      cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+      transition: "all 0.15s", flexShrink: 0,
+    }}>
+      {checked && <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 7l3.5 3.5L12 3" stroke="#000" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+    </button>
+  );
+}
+
+function WeightInput({ value, onChange, color }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+      <input type="number" value={value} onChange={e => onChange(e.target.value)} placeholder="lbs"
+        style={{ width: 60, padding: "5px 8px", background: "#1a1a1a", border: "1px solid #333", borderRadius: 6, color: "#fff", fontSize: 13, fontFamily: "inherit", outline: "none", textAlign: "center" }}
+        onFocus={e => e.target.style.borderColor = color}
+        onBlur={e => e.target.style.borderColor = "#333"}
+      />
+      <span style={{ fontSize: 11, color: "#555" }}>lbs</span>
+    </div>
+  );
+}
+
+// ---- MAIN APP ----
+function App() {
+  const [data, setData] = useState(() => loadData());
+  const [activeDay, setActiveDay] = useState(() => WEEKDAYS[new Date().getDay()]);
+  const [showScheduleEditor, setShowScheduleEditor] = useState(false);
+  const [historyView, setHistoryView] = useState(false);
+  const [showComplete, setShowComplete] = useState(false);
+  const [timerRunning, setTimerRunning] = useState(false);
+  const [timerKey, setTimerKey] = useState(0);
+
+  const schedule = data.schedule || DEFAULT_SCHEDULE;
+  const workoutId = schedule[activeDay] || "rest";
+  const currentWorkout = WORKOUTS.find(w => w.id === workoutId) || WORKOUTS[5];
+  const history = data.history || [];
+
+  const update = (newData) => { setData(newData); saveData(newData); };
+
+  const toggleSet = (exId, si) => {
+    const key = `${activeDay}-${workoutId}-${exId}-s${si}`;
+    const logs = { ...(data.logs || {}), [key]: !data.logs?.[key] };
+    update({ ...data, logs });
+  };
+  const setWeight = (exId, val) => {
+    const key = `${activeDay}-${workoutId}-${exId}-w`;
+    update({ ...data, weights: { ...(data.weights || {}), [key]: val } });
+  };
+  const setNote = (exId, val) => {
+    const key = `${activeDay}-${workoutId}-${exId}-n`;
+    update({ ...data, notes: { ...(data.notes || {}), [key]: val } });
+  };
+  const getWeight = (exId) => data.weights?.[`${activeDay}-${workoutId}-${exId}-w`] || "";
+  const getNote = (exId) => data.notes?.[`${activeDay}-${workoutId}-${exId}-n`] || "";
+  const isSetDone = (exId, si) => !!data.logs?.[`${activeDay}-${workoutId}-${exId}-s${si}`];
+  const getExDone = (exId, sets) => { let d=0; for(let i=0;i<sets;i++) if(isSetDone(exId,i)) d++; return d; };
+
+  const getDayProgress = () => {
+    let done = 0, total = 0;
+    currentWorkout.sections.forEach(s => s.exercises.forEach(ex => {
+      for (let i = 0; i < ex.sets; i++) { total++; if (isSetDone(ex.id, i)) done++; }
+    }));
+    return { done, total };
+  };
+
+  const { done: totalDone, total: totalSets } = getDayProgress();
+  const pct = totalSets > 0 ? Math.round((totalDone / totalSets) * 100) : 0;
+
+  const completeWorkout = () => {
+    const entry = {
+      date: new Date().toLocaleDateString(), day: activeDay,
+      label: currentWorkout.label, focus: currentWorkout.label,
+      setsCompleted: totalDone, totalSets,
+      exercises: currentWorkout.sections.flatMap(s => s.exercises.map(ex => ({
+        name: ex.name, weight: getWeight(ex.id),
+        setsCompleted: getExDone(ex.id, ex.sets), totalSets: ex.sets,
+      }))),
+    };
+    update({ ...data, history: [entry, ...(data.history||[])].slice(0, 40) });
+    setTimerRunning(false);
+    setShowComplete(true);
+    setTimeout(() => setShowComplete(false), 2500);
+  };
+
+  const clearDay = () => {
+    const logs = { ...(data.logs || {}) };
+    currentWorkout.sections.forEach(s => s.exercises.forEach(ex => {
+      for (let i = 0; i < ex.sets; i++) delete logs[`${activeDay}-${workoutId}-${ex.id}-s${i}`];
+    }));
+    update({ ...data, logs });
+    setTimerRunning(false);
+    setTimerKey(k => k + 1);
+  };
+
+  const saveSchedule = (newSchedule) => {
+    update({ ...data, schedule: newSchedule });
+    setShowScheduleEditor(false);
+  };
+
+  const color = currentWorkout.color;
+  const isRestDay = workoutId === "rest";
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#0a0a0a", color: "#f0f0f0", fontFamily: "'DM Sans', system-ui, sans-serif", paddingBottom: 80 }}>
+
+      {showScheduleEditor && <ScheduleEditor schedule={schedule} onSave={saveSchedule} onClose={() => setShowScheduleEditor(false)} />}
+
+      {/* Header */}
+      <div style={{ background: "#111", borderBottom: "1px solid #1e1e1e", padding: "16px 16px 0" }}>
+        <div style={{ maxWidth: 700, margin: "0 auto" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
+            <div>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 34, letterSpacing: 3, color: "#e8ff47", lineHeight: 1 }}>THOMPSON GAINS</div>
+              <div style={{ fontSize: 11, color: "#555", letterSpacing: 2, textTransform: "uppercase", marginTop: 2 }}>5-Day Tracker · Data saves locally</div>
+            </div>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button onClick={() => setShowScheduleEditor(true)} style={{
+                background: "#1a1a1a", border: "1px solid #2a2a2a", color: "#888",
+                padding: "7px 12px", borderRadius: 6, cursor: "pointer", fontSize: 11,
+                fontFamily: "inherit", fontWeight: 600, letterSpacing: 1,
+              }}>📅 SCHEDULE</button>
+              <button onClick={() => setHistoryView(!historyView)} style={{
+                background: historyView ? "#e8ff47" : "#1a1a1a", border: "1px solid #2a2a2a",
+                color: historyView ? "#000" : "#888", padding: "7px 12px", borderRadius: 6,
+                cursor: "pointer", fontSize: 11, fontFamily: "inherit", fontWeight: 600, letterSpacing: 1,
+              }}>{historyView ? "← BACK" : "HISTORY"}</button>
+            </div>
+          </div>
+
+          {/* Day Tabs */}
+          {!historyView && (
+            <div style={{ display: "flex", gap: 2, overflowX: "auto", paddingBottom: 0 }}>
+              {WEEKDAYS.map(day => {
+                const wid = schedule[day] || "rest";
+                const wo = WORKOUTS.find(w => w.id === wid) || WORKOUTS[5];
+                const isActive = activeDay === day;
+                const isToday = WEEKDAYS[new Date().getDay()] === day;
+                return (
+                  <button key={day} className="day-tab" onClick={() => setActiveDay(day)} style={{
+                    background: isActive ? wo.color : "transparent",
+                    border: `2px solid ${isActive ? wo.color : isToday ? "#444" : "#222"}`,
+                    color: isActive ? "#000" : isToday ? "#ccc" : "#666",
+                    padding: "8px 10px", borderRadius: "6px 6px 0 0",
+                    cursor: "pointer", fontFamily: "'Bebas Neue', sans-serif",
+                    fontSize: 13, letterSpacing: 1, whiteSpace: "nowrap", transition: "all 0.15s",
+                    position: "relative",
+                  }}>
+                    {day.slice(0,3).toUpperCase()}
+                    {isToday && !isActive && (
+                      <span style={{ position: "absolute", top: -5, right: -5, width: 8, height: 8, background: "#e8ff47", borderRadius: "50%" }}/>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* History View */}
+      {historyView ? (
+        <div style={{ maxWidth: 700, margin: "24px auto", padding: "0 16px", animation: "fadeIn 0.3s ease" }}>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: "#e8ff47", letterSpacing: 2, marginBottom: 16 }}>WORKOUT HISTORY</div>
+          {history.length === 0 ? (
+            <div style={{ textAlign: "center", color: "#444", padding: 48, fontSize: 14 }}>No workouts logged yet. Complete a session!</div>
+          ) : history.map((entry, i) => {
+            const wo = WORKOUTS.find(w => w.label === entry.label || w.id === entry.day) || WORKOUTS[0];
+            return (
+              <div key={i} style={{ background: "#141414", border: "1px solid #222", borderRadius: 10, padding: 18, marginBottom: 12, borderLeft: `4px solid ${wo.color}`, animation: "fadeIn 0.3s ease" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+                  <div>
+                    <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: wo.color, letterSpacing: 1 }}>{entry.day} — {entry.label}</div>
+                    <div style={{ fontSize: 12, color: "#555", marginTop: 2 }}>{entry.date}</div>
+                  </div>
+                  <div style={{ background: "rgba(232,255,71,0.1)", border: "1px solid rgba(232,255,71,0.2)", padding: "4px 10px", borderRadius: 4, fontSize: 12, color: "#e8ff47", fontWeight: 600 }}>
+                    {entry.setsCompleted}/{entry.totalSets} sets
+                  </div>
+                </div>
+                <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 4 }}>
+                  {entry.exercises?.filter(ex => ex.weight || ex.setsCompleted > 0).map((ex, j) => (
+                    <div key={j} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#666" }}>
+                      <span>{ex.name}</span>
+                      <span>{ex.setsCompleted}/{ex.totalSets} sets {ex.weight ? <span style={{ color: wo.color, marginLeft: 6 }}>{ex.weight} lbs</span> : ""}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div style={{ maxWidth: 700, margin: "0 auto", padding: "16px 16px", animation: "fadeIn 0.3s ease" }}>
+
+          {isRestDay ? (
+            <div style={{ textAlign: "center", padding: "60px 20px" }}>
+              <div style={{ fontSize: 60, marginBottom: 16 }}>😴</div>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 36, color: "#444", letterSpacing: 3 }}>REST DAY</div>
+              <div style={{ fontSize: 14, color: "#555", marginTop: 8 }}>Recovery is part of the gains. Enjoy it.</div>
+              <button onClick={() => setShowScheduleEditor(true)} style={{ marginTop: 24, padding: "10px 24px", borderRadius: 8, background: "transparent", border: "1px solid #2a2a2a", color: "#666", fontFamily: "inherit", fontSize: 13, cursor: "pointer" }}>
+                Change this day's workout →
+              </button>
+            </div>
+          ) : (
+            <>
+              {/* Day Header Card */}
+              <div style={{ background: "#141414", border: "1px solid #222", borderRadius: 12, padding: 18, marginBottom: 14, borderTop: `3px solid ${color}` }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
+                  <div>
+                    <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 26, color, letterSpacing: 2, lineHeight: 1 }}>{activeDay} — {currentWorkout.label}</div>
+                    <div style={{ fontSize: 13, color: "#666", marginTop: 3 }}>{currentWorkout.subtitle}</div>
+                    <div style={{ display: "inline-block", fontSize: 11, padding: "3px 10px", borderRadius: 4, marginTop: 8, background: `${currentWorkout.equipColor}18`, color: currentWorkout.equipColor, border: `1px solid ${currentWorkout.equipColor}44`, fontWeight: 600, letterSpacing: 1 }}>
+                      {currentWorkout.equipment}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 38, color: pct === 100 ? "#47ffb0" : color, lineHeight: 1 }}>{pct}%</div>
+                    <div style={{ fontSize: 11, color: "#555", marginTop: 2 }}>{totalDone} / {totalSets} SETS</div>
+                  </div>
+                </div>
+
+                {/* Workout Timer */}
+                <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid #1e1e1e" }}>
+                  <div style={{ fontSize: 10, color: "#555", textTransform: "uppercase", letterSpacing: 2, marginBottom: 8 }}>WORKOUT TIMER</div>
+                  <WorkoutTimer key={timerKey} color={color} isRunning={timerRunning} onToggle={() => setTimerRunning(r => !r)} onReset={() => { setTimerRunning(false); setTimerKey(k => k+1); }} />
+                </div>
+
+                {/* Progress Bar */}
+                <div style={{ marginTop: 14, background: "#1e1e1e", height: 5, borderRadius: 3, overflow: "hidden" }}>
+                  <div style={{ height: "100%", borderRadius: 3, background: pct === 100 ? "#47ffb0" : color, width: `${pct}%`, transition: "width 0.4s ease" }} />
+                </div>
+
+                <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                  <button onClick={completeWorkout} style={{
+                    flex: 1, padding: "10px 0", borderRadius: 8,
+                    background: pct === 100 ? "#47ffb0" : `${color}22`,
+                    border: `1px solid ${pct === 100 ? "#47ffb0" : color}`,
+                    color: pct === 100 ? "#000" : color,
+                    fontFamily: "inherit", fontWeight: 600, fontSize: 13, cursor: "pointer", letterSpacing: 1,
+                    animation: showComplete ? "pop 0.3s ease" : "none",
+                  }}>
+                    {showComplete ? "✓ LOGGED!" : pct === 100 ? "✅ COMPLETE WORKOUT" : "LOG WORKOUT"}
+                  </button>
+                  <button onClick={clearDay} style={{ padding: "10px 14px", borderRadius: 8, background: "transparent", border: "1px solid #2a2a2a", color: "#555", fontFamily: "inherit", fontSize: 12, cursor: "pointer" }}>RESET</button>
+                </div>
+              </div>
+
+              {/* Rest Timer */}
+              <RestTimer color={color} />
+
+              {/* Exercise Sections */}
+              {currentWorkout.sections.map((section, si) => (
+                <div key={si} style={{ background: section.isFinisher ? "rgba(232,255,71,0.03)" : "#141414", border: section.isFinisher ? "1px solid rgba(232,255,71,0.15)" : "1px solid #1e1e1e", borderRadius: 10, marginBottom: 10, overflow: "hidden" }}>
+                  <div style={{ padding: "11px 16px", borderBottom: "1px solid #1a1a1a", fontSize: 11, textTransform: "uppercase", letterSpacing: 2, fontWeight: 600, color: section.isFinisher ? "#e8ff47" : "#555" }}>
+                    {section.title}
+                  </div>
+                  {section.exercises.map((ex, ei) => {
+                    const exDone = getExDone(ex.id, ex.sets);
+                    const allDone = exDone === ex.sets;
+                    return (
+                      <div key={ei} className="ex-row" style={{ padding: "13px 16px", borderBottom: ei < section.exercises.length - 1 ? "1px solid #1a1a1a" : "none", background: allDone ? `${color}08` : "transparent", transition: "background 0.15s" }}>
+                        <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 8 }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 14, fontWeight: 500, color: allDone ? color : "#e0e0e0", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                              {ex.name}
+                              {ex.kneeSafe && <span style={{ fontSize: 9, background: "rgba(71,255,176,0.12)", color: "#47ffb0", border: "1px solid rgba(71,255,176,0.3)", padding: "1px 6px", borderRadius: 3, letterSpacing: 1, fontWeight: 700 }}>KNEE SAFE</span>}
+                            </div>
+                            <div style={{ fontSize: 12, color: "#555", marginTop: 2 }}>{ex.sets} sets × {ex.reps} · {exDone}/{ex.sets} done</div>
+                          </div>
+                          <WeightInput value={getWeight(ex.id)} onChange={v => setWeight(ex.id, v)} color={color} />
+                        </div>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+                          {Array.from({ length: ex.sets }).map((_, si2) => (
+                            <SetButton key={si2} checked={isSetDone(ex.id, si2)} onClick={() => toggleSet(ex.id, si2)} color={color} />
+                          ))}
+                        </div>
+                        <input value={getNote(ex.id)} onChange={e => setNote(ex.id, e.target.value)}
+                          placeholder="Note (e.g. felt strong, go heavier next week)..."
+                          style={{ width: "100%", background: "#0f0f0f", border: "1px solid #222", borderRadius: 6, padding: "6px 10px", color: "#888", fontSize: 12, fontFamily: "inherit", outline: "none" }}
+                          onFocus={e => e.target.style.borderColor = color}
+                          onBlur={e => e.target.style.borderColor = "#222"}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+
+              {/* Sauna Reminder */}
+              <div style={{ background: "linear-gradient(135deg, rgba(255,107,53,0.08), rgba(255,107,53,0.03))", border: "1px solid rgba(255,107,53,0.2)", borderRadius: 10, padding: 14, display: "flex", alignItems: "center", gap: 12 }}>
+                <span style={{ fontSize: 26 }}>🔥</span>
+                <div>
+                  <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, color: "#ff6b35", letterSpacing: 2 }}>15 MIN SAUNA AFTER</div>
+                  <div style={{ fontSize: 12, color: "#555", marginTop: 2 }}>Drink 16oz water first · Reduces knee inflammation · Boosts recovery</div>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
